@@ -486,16 +486,22 @@ if(walkP&&Math.abs(nz-P.z)<v.hl+.3&&Math.abs(v.x-P.x)<v.hw+.3&&P.y<1.3&&v.s>1.2)
 if(P.veh){const pv=P.veh.m.position,r=P.veh.type==='moto'?.6:P.veh.type==='car'?1.2:1.8;if(Math.abs(nz-pv.z)<v.hl+r&&Math.abs(v.x-pv.x)<v.hw+.45&&Math.hypot(Math.sin(P.yaw)*P.veh.s,v.d*v.s-Math.cos(P.yaw)*P.veh.s)>2.5)crash()}}));
 if(G.f.beer&&P.veh&&Math.abs(P.veh.s)>4&&Math.random()<dt*.035*G.f.beer){G.f.beer=0;crash('Hơi men làm tay lái loạng choạng!')}}
 const NPCS=[];
+// v10: chia bản đồ gốc thành ô CORE_T×CORE_T, mỗi khung hình chỉ vẽ ô trong tầm nhìn/sương mù (trước đây vẽ cả bản đồ)
+const CORE=[],CORE_T=32,CORE_FR=new THREE.Frustum(),CORE_M=new THREE.Matrix4();
+function coreCull(){if(!CORE.length)return;camera.updateMatrixWorld();CORE_M.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);CORE_FR.setFromProjectionMatrix(CORE_M);
+const far=(scene.fog?scene.fog.far:200)+4,cp=camera.position;for(const t of CORE){const d=t.sph.center.distanceTo(cp)-t.sph.radius;t.mesh.visible=d<far&&(d<18||CORE_FR.intersectsSphere(t.sph))}}
 function bake(){
 while(world.children.length)world.remove(world.children[0]);NPCS.length=0;
 const jit=(x,y,z)=>.93+((((x*73856093)^(y*19349663)^(z*83492791))>>>0)%100)/100*.12;
 const col=new THREE.Color(),flat=[],up=[];
 blocks.forEach((c,k)=>{const a=k.split(',').map(Number);(a[1]<0?flat:up).push([a[0],a[1],a[2],c])});
 const open=up.filter(([x,y,z])=>[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]].some(([a,b,c])=>!blocks.has(key(x+a,y+b,z+c))));
-const groups={},m=new THREE.Matrix4();open.forEach(b=>{const k=KIND[b[3]]||'plain';(groups[k]=groups[k]||[]).push(b)});
-Object.keys(groups).forEach(k=>{const arr=groups[k],mesh=new THREE.InstancedMesh(UNIT,mat(k),arr.length);
+const groups={},m=new THREE.Matrix4();CORE.length=0;open.forEach(b=>{const k=(KIND[b[3]]||'plain')+'|'+Math.floor(b[0]/CORE_T)+'|'+Math.floor(b[2]/CORE_T);(groups[k]=groups[k]||[]).push(b)});
+Object.keys(groups).forEach(gk=>{const k=gk.split('|')[0],arr=groups[gk],mesh=new THREE.InstancedMesh(UNIT,mat(k),arr.length);
 arr.forEach(([x,y,z,c],i)=>{m.makeTranslation(x+.5,y+.5,z+.5);mesh.setMatrixAt(i,m);col.setHex(c).multiplyScalar(jit(x,y,z));mesh.setColorAt(i,col)});
-mesh.frustumCulled=false;mesh.castShadow=k!=='glass';mesh.receiveShadow=true;world.add(mesh)});
+mesh.frustumCulled=false;mesh.castShadow=k!=='glass';mesh.receiveShadow=true;world.add(mesh);
+let a0=1e9,a1=-1e9,b0=1e9,b1=-1e9,c0=1e9,c1=-1e9;arr.forEach(([x,y,z])=>{a0=Math.min(a0,x);a1=Math.max(a1,x+1);b0=Math.min(b0,y);b1=Math.max(b1,y+1);c0=Math.min(c0,z);c1=Math.max(c1,z+1)});
+const ctr=new THREE.Vector3((a0+a1)/2,(b0+b1)/2,(c0+c1)/2);CORE.push({mesh,sph:new THREE.Sphere(ctr,Math.hypot(a1-a0,b1-b0,c1-c0)/2)})});
 let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;flat.forEach(([x,,z])=>{x0=Math.min(x0,x);x1=Math.max(x1,x);z0=Math.min(z0,z);z1=Math.max(z1,z)});
 ground(flat,x0,z0,x1-x0+1,z1-z0+1)}
 function box(p,w,h,d,x,y,z,c,opts){const mt=new THREE.MeshLambertMaterial(Object.assign({color:c},opts||{}));const b=new THREE.Mesh(UNIT,mt);b.scale.set(w,h,d);b.position.set(x,y,z);b.castShadow=true;b.receiveShadow=true;p.add(b);return b}
@@ -996,8 +1002,8 @@ const LBL=()=>job()==='sinhvien'?{cw:'Hạnh (bạn cùng lớp)',boss:'Thầy Q
 function homeItems(){const S=spouse(),K=kid();return [
 {x:4.5,z:24.5,y:1.3,verb:'Nhặt',hint:'Nhặt điện thoại',on:()=>!G.inv.phone,use(){act('crouch',.8,()=>{PROPS.phone.visible=false;invAdd('phone')})}},
 {x:7.5,z:17.5,y:1.6,verb:'Mở cửa',hint:'Mở cửa phòng ngủ',on:()=>!DOORS.bed.open,use(){DOORS.bed.set(true)}},
-{x:10,z:21.6,y:1.4,verb:'Ăn sáng',hint:'Ngồi ăn sáng',on:()=>G.f.breakfast===undefined,use(){
-talk('','Gần trễ giờ rồi.',[{t:'Ngồi ăn',f(){hold(0xf2efe6);PROPS.bowl.visible=false;act('eat',3,()=>{hold(0);G.f.breakfast=1;setTime(job()==='taixe'?'04:50':'06:55');logx('Ăn sáng ở nhà','good')})}},{t:'Bỏ bữa, đi luôn',f(){G.f.breakfast=0;logx('Bỏ bữa sáng','risk');say('','Thôi, trưa ăn bù.')}}])}},
+{x:10,z:21.6,y:1.4,verb:'Ăn sáng',hint:'Ngồi ăn sáng',on:()=>G.f.breakfast===undefined&&!G.f.eatingB,use(){
+talk('','Gần trễ giờ rồi.',[{t:'Ngồi ăn',f(){if(G.f.eatingB)return;G.f.eatingB=1;hold(0xf2efe6);PROPS.bowl.visible=false;act('eat',3,()=>{hold(0);G.f.breakfast=1;setTime(job()==='taixe'?'04:50':'06:55');logx('Ăn sáng ở nhà','good')})}},{t:'Bỏ bữa, đi luôn',f(){G.f.breakfast=0;logx('Bỏ bữa sáng','risk');say('','Thôi, trưa ăn bù.')}}])}},
 ...PF.fam.map((m,i)=>({npc:i,y:1.9,verb:'Nói chuyện',hint:'Nói chuyện với '+m.ten,on:()=>G.mode==='day'&&!G.f['fam'+i]&&!G.f.home,use(){G.f['fam'+i]=1;G.f.greet=1;
 if(m===K){talk(m.ten,`${PF.gioi==='Nam'?'Bố':'Mẹ'} ơi, chiều về mua bánh cho con nha!`,[{t:'"Ừ, chiều mua."',f(){G.f.promise=1;logx(`Hứa mua bánh cho ${m.ten}`,'');say('','Ừ, chiều về mua.')}},{t:'"Để coi đã."',f(){say('','Để coi đã.')}}]);return}
 if(m===S){talk(m.ten,pick(['Đi làm cẩn thận nha. Tối về sớm ăn cơm.','Nhớ ăn uống đàng hoàng. Tối nay về sớm nha.']),[{t:'"Ừ, tối về sớm."',f(){G.f.promiseHome=1;logx(`Hứa với ${m.ten} tối về sớm`,'');say('','Ừ, tối về sớm.')}}]);return}
@@ -1005,7 +1011,7 @@ talk(m.ten,pick(['Đi làm cẩn thận nghe con.','Đi đường coi chừng xe
 {x:13.4,z:15.2,y:2.2,verb:'Lấy',hint:'Lấy ví và giấy tờ ở kệ',on:()=>!G.inv.card,use(){act('crouch',.8,()=>{PROPS.card.visible=PROPS.wallet.visible=false;G.inv.card=G.inv.wallet=true;floatIcon('wallet');burst(P.x,P.y+1.2,P.z,0x5ce6ff,12,2.4,5);snd('pickup');buzz(10);renderInv()})}},
 {x:13.4,z:16.3,y:2.4,verb:'Lấy',hint:'Lấy nón bảo hiểm',on:()=>PROPS.helmet.visible&&!G.inv.helmet,use(){PROPS.helmet.visible=false;invAdd('helmet')}},
 {x:10.5,z:14.5,y:1.6,verb:'Mở cửa',hint:'Mở cửa nhà',on:()=>!DOORS.front.open,use(){DOORS.front.set(true)}},
-{x:10,z:21.6,y:1.4,verb:'Ăn tối',hint:PF.fam.length?'Ăn tối cùng gia đình':'Ăn tối',on:()=>G.f.home&&!G.f.dinner&&job()!=='sinhvien',use(){
+{x:10,z:21.6,y:1.4,verb:'Ăn tối',hint:PF.fam.length?'Ăn tối cùng gia đình':'Ăn tối',on:()=>G.f.home&&!G.f.dinner&&!G.f.eatingD&&job()!=='sinhvien',use(){G.f.eatingD=1;
 if(G.inv.cake&&K){G.inv.cake=false;hold(0);renderInv();logx(`Đưa bánh cho ${K.ten}`,'good');G.f.gaveCake=1}act('eat',3,()=>{G.f.dinner=1;setTime('19:30');survive()})}}]}
 function homeQuests(){const S=spouse();return [
 ...(Object.keys(book().jobs).length?[]:[{t:CFG.ctrl==='joy'?'Đẩy cần lên để đi tới':TOUCH?'Giữ nút ▲ để đi tới':'Giữ ▲ (hoặc phím W) để đi tới',done:()=>G.tut.fwd>1.5},
@@ -1375,14 +1381,14 @@ const s=$('#sheet');s.hidden=false;const S=spouse(),K=kid();
 const fam=PF.fam.slice(0,3).map(m=>{const n=esc(m.ten);
 if(m===K)return `${n} ${T('ngồi chờ ở cửa.')}`;if(m===S)return `${n} ${T('nhận cuộc gọi.')}`;if(m.qh==='Mẹ'||m.qh==='Bố')return `${n} ${T('ngồi lặng bên bàn thờ.')}`;return `${n} ${T('chạy tới.')}`});
 const un=[];if(G.f.promise&&!G.f.gaveCake&&K)un.push(T('hộp bánh cho')+' '+K.ten);if(G.f.momMsg&&!G.f.called2)un.push(T('gọi lại cho')+' '+T(G.f.momMsg));if(G.f.promiseHome&&S)un.push(T('bữa tối với')+' '+S.ten);
-const ev=G.log.filter(l=>l.kind).slice(-6);
+const evSeen=new Set(),ev=G.log.filter(l=>l.kind&&!evSeen.has(l.text)&&evSeen.add(l.text)).slice(-6);
 s.innerHTML=`<h2>${T('Ngày của bạn')}</h2><ul id="tl"></ul><div id="rest" hidden>${fam.length?`<p>${fam.join(' ')}</p>`:''}${un.length?`<p class="bad">${T('Chưa kịp')}: ${esc(un.join(' · '))}</p>`:''}${G.scnKill?`<p class="dim"><i>“${esc(G.scnKill.q)}”</i></p>`:''}
 <button class="btn main" type="button" id="go">${T('Đi tiếp')}</button></div>`;
 const tl=$('#tl');let i=0;const step=()=>{if(i<ev.length){const l=ev[i++];const li=document.createElement('li');li.className='fade '+(l.kind==='good'?'good':'bad');li.textContent=(l.kind==='good'?'✓ ':'✗ ')+T(l.text);tl.appendChild(li);setTimeout(step,380)}else{$('#rest').hidden=false;$('#go').onclick=()=>{s.hidden=true;afterlife()}}};step()}
 </script>
 <script>
 // ===== Cõi bên kia theo tôn giáo =====
-function goods(){return G.log.filter(l=>l.kind&&l.text!==CAUSE[G.cause].name).slice(0,7).map(l=>[l.text,l.kind==='good'])}
+function goods(){const seen=new Set();return G.log.filter(l=>l.kind&&l.text!==CAUSE[G.cause].name&&!seen.has(l.text)&&seen.add(l.text)).slice(0,7).map(l=>[l.text,l.kind==='good'])}
 const REL={
 phat:{hill:[0x8a6a5a,0x6a4a5a],sky:[0xe8c890,0x8a6a9a],ground:0x5a5048,path:0xc8b088,fog:0xd8b890,obj:'lotus',st1:'Gia đình tụng kinh cầu siêu cho bạn.',st2:'Việc tốt nở thành hoa sen. Việc lỡ làng, sen còn khép.',
 fig:'buddha',figVerb:'Quỳ lạy',figHint:'Quỳ, chắp tay lạy trước ánh sáng',figSay:['Ánh sáng vàng','Nam mô A Di Đà Phật.'],
@@ -1673,7 +1679,7 @@ dome.position.copy(camera.position);signals(.016,now,G.mode==='day'?G.tgt:null);
 if(G.bub){const b=$('#bub');if(now>G.bub.until||(G.dlg&&Math.hypot(G.bub.px-P.x,G.bub.pz-P.z)>6))closeTalk();
 else{const a=G.bub.at;if(a)v3.copy(a);else v3.set(P.x,P.y+P.h+.3,P.z);v3.project(camera);
 if(v3.z>1)b.hidden=true;else{b.hidden=false;b.style.left=clamp((v3.x+1)/2*innerWidth,90,innerWidth-90)+'px';b.style.top=Math.max(70,(1-v3.y)/2*innerHeight-8)+'px'}}}
-renderer.render(scene,camera)}
+coreCull();renderer.render(scene,camera)}
 for(const [fn,ev] of [['survive','survive'],['saved','saved'],['lesson','lesson'],['startDay','day_start'],['openMap','map']]){const o=window[fn];window[fn]=function(){track(ev);return o.apply(this,arguments)}}
 {const o=die;window.die=function(k){if(G.mode==='day')track('death');return o(k)}}
 PF=loadPF();G.f={};G.paused=false;applyGfx();applyCtl();enterStage();splash();track(innerHeight>innerWidth?'open_portrait':'open_landscape');if(location.search.includes('stats'))try{alert(localStorage.getItem('ngaycuoi.stats'))}catch(_){}
